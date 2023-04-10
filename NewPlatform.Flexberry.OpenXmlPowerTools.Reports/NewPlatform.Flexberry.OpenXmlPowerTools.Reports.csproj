@@ -1,11 +1,65 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+	<Description>Flexberry OpenXmlPowerTools Reports package.</Description>
+    <Title>Flexberry OpenXmlPowerTools Reports</Title>
+    <PackageTags>Flexberry OpenXmlPowerTools Reports</PackageTags>
+    <Product>NewPlatform.Flexberry.OpenXmlPowerTools.Reports</Product>
+    <PackageId>NewPlatform.Flexberry.OpenXmlPowerTools.Reports</PackageId>
+    <Authors>New Platform Ltd.</Authors>
+    <Copyright>Copyright 2017-2023 © New Platform Ltd.</Copyright>
+    <Company>New Platform Ltd.</Company>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+    <RepositoryUrl>git://github.com/Flexberry/NewPlatform.Flexberry.OpenXmlPowerTools.Reports</RepositoryUrl>
+    <PackageReleaseNotes>See https://github.com/Flexberry/NewPlatform.Flexberry.OpenXmlPowerTools.Reports/blob/main/CHANGELOG.md </PackageReleaseNotes>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <RootNamespace>NewPlatform.Flexberry.Reports</RootNamespace>
+    <AssemblyName>NewPlatform.Flexberry.OpenXmlPowerTools.Reports</AssemblyName>
+    <AssemblyVersion>1.0.0.1</AssemblyVersion>
+    <FileVersion>1.0.0.1</FileVersion>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <Configurations>Debug;Release</Configurations>
+    <LangVersion>latest</LangVersion>
+    <SignAssembly>true</SignAssembly>
+    <DelaySign>false</DelaySign>
+	<CodeAnalysisRuleSet>$(MSBuildThisFileDirectory)\Flexberry.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenXmlPowerTools.NetStandard" Version="4.6.0" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="5.0.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+	<PackageReference Include="SonarAnalyzer.CSharp" Version="8.44.0.52574">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.1.118">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)\icon.png" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)\key.snk" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)\LICENSE.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)\icon.png" Pack="true" PackagePath="" />
+    <None Include="$(MSBuildThisFileDirectory)\LICENSE.md" Pack="true" PackagePath="" />
+    <None Remove="StyleCop.Cache" />
+  </ItemGroup>
 </Project>
