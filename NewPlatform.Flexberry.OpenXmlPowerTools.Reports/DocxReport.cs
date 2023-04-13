@@ -95,6 +95,8 @@
             }
 
             templateDoc = new WmlDocument(templateFilePath);
+
+            templateDocument.Close();
         }
 
         /// <summary>
