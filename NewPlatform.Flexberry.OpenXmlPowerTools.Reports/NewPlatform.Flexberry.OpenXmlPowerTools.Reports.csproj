@@ -8,7 +8,8 @@
     <Authors>New Platform Ltd.</Authors>
     <Copyright>Copyright 2017-2023 © New Platform Ltd.</Copyright>
     <Company>New Platform Ltd.</Company>
-    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionPrefix>1.0.1</VersionPrefix>
+	<VersionSuffix>beta01</VersionSuffix>
     <PackageIcon>icon.png</PackageIcon>
     <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
     <RepositoryUrl>git://github.com/Flexberry/NewPlatform.Flexberry.OpenXmlPowerTools.Reports</RepositoryUrl>
