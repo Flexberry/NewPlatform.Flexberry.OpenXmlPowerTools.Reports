@@ -17,10 +17,11 @@
     using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
     using Run = DocumentFormat.OpenXml.Wordprocessing.Run;
 
+    /// <summary>
+    /// Работа с отчетами в формате docx.
+    /// </summary>
     public class DocxReport
     {
-        public readonly string NewLine = Environment.NewLine;
-
         private readonly WmlDocument templateDoc;
 
         private readonly List<Source> resultDocs = new List<Source>();
@@ -30,237 +31,6 @@
         private readonly List<TemplateImageParameter> templateImageParameters = new List<TemplateImageParameter>();
 
         private readonly List<TemplateTableParameter> templateTableParameters;
-
-        /// <summary>
-        /// Найти все параметры в по указанному паттерну в тексте
-        /// </summary>
-        /// <param name="text"></param>
-        /// <param name="pattern"></param>
-        /// <param name="patternGroup"></param>
-        private List<string> MatchParameters(string text, string pattern, string patternGroup)
-        {
-            var regex = new Regex(pattern);
-            return regex.Matches(text).Cast<Match>().Select(m => m.Groups[patternGroup].Value).ToList();
-        }
-
-        /// <summary>
-        /// Открываем шаблон, ищем параметры
-        /// </summary>
-        public DocxReport(string templateFilePath)
-        {
-            // открыть файл шаблона
-            var templateDocument = WordprocessingDocument.Open(templateFilePath, false);
-
-            var mainPart = templateDocument.MainDocumentPart;
-
-            // формируем сложные-табличные шаблоны (<##Имя ... <#Поле#> ... Имя##>)
-            var allText = mainPart.Document.InnerText;
-            templateTableParameters = TemplateTableParameter.MatchParameters(allText);
-
-            // формируем простые шаблоны ([Имя])
-            foreach (
-                var parameter in
-                    MatchParameters(allText, @"\[(?<param>.+?)\]", "param")
-                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
-            {
-                templateParameters.Add(new TemplateParameter(parameter));
-            }
-
-
-            foreach (var headerPart in mainPart.HeaderParts)
-            {
-                foreach (var parameter in
-                    MatchParameters(headerPart.Header.InnerText, @"\[(?<param>.+?)\]", "param")
-                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
-                {
-                    templateParameters.Add(new TemplateParameter(parameter));
-                }
-            }
-
-            foreach (var footerPart in mainPart.FooterParts)
-            {
-                foreach (var parameter in
-                    MatchParameters(footerPart.Footer.InnerText, @"\[(?<param>.+?)\]", "param")
-                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
-                {
-                    templateParameters.Add(new TemplateParameter(parameter));
-                }
-            }
-
-            // формируем шаблоны - рисунки
-            var allBookmarks = mainPart.RootElement.Descendants<BookmarkStart>();
-            foreach (var bookMark in allBookmarks.Where(b => b.Name.ToString().StartsWith(TemplateImageParameter.ImgBookmarkPrefix)))
-            {
-                templateImageParameters.Add(new TemplateImageParameter(bookMark.Name));
-            }
-
-            templateDoc = new WmlDocument(templateFilePath);
-
-            templateDocument.Close();
-        }
-
-        /// <summary>
-        /// Сохраняем и закрываем документы
-        /// </summary>
-        public void SaveAs(string saveFilePath)
-        {
-            DocumentBuilder.BuildDocument(resultDocs, saveFilePath);
-        }
-
-        public void SaveAs(Stream stream)
-        {
-            var wmlDocument = DocumentBuilder.BuildDocument(resultDocs);
-            wmlDocument.WriteByteArray(stream);
-        }
-
-        /// <summary>
-        /// Создать замены на основе созданных параметров и тех которые есть в шаблоне
-        /// </summary>
-        /// <param name="inputParameters"></param>
-        /// <param name="replace"></param>
-        protected void FormReplaceByExistsParameters(
-            Dictionary<string, object> inputParameters,
-            Dictionary<string, string> replace)
-        {
-            foreach (var templateParameter in templateParameters)
-            {
-                if (inputParameters.ContainsKey(templateParameter.Name))
-                {
-                    object inputParameterValue = inputParameters[templateParameter.Name];
-                    replace.Add(
-                        $"[{templateParameter.FullName}]",
-                        templateParameter.FormatObject(inputParameterValue));
-                    continue;
-                }
-
-                // Может быть идет значение какого-либо поля параметра
-                var parameterName = templateParameter.Name;
-                if (!parameterName.Contains("."))
-                {
-                    continue;
-                }
-
-                var objectName = parameterName.Substring(0, parameterName.IndexOf("."));
-
-                // если такого параметра нет значит пользователь скармливает сайту какую-то фигню, игнорируем его
-                if (!inputParameters.ContainsKey(objectName))
-                {
-                    continue;
-                }
-
-                object dataObject = inputParameters[objectName];
-
-                // ковыряем значения полей через reflection
-                var fieldName = parameterName.Remove(0, objectName.Length + 1);
-
-                while (fieldName.Contains(".") && dataObject != null)
-                {
-                    objectName = fieldName.Substring(0, fieldName.IndexOf("."));
-                    dataObject = GetFieldValueWithReflection(dataObject, objectName);
-
-                    fieldName = fieldName.Remove(0, objectName.Length + 1);
-                }
-
-                if (dataObject != null)
-                {
-                    var fieldValue = GetFieldValueWithReflection(dataObject, fieldName);
-                    replace.Add($"[{templateParameter.FullName}]", templateParameter.FormatObject(fieldValue));
-                    continue;
-                }
-
-                // Сам параметр валидный, но в объектных свойствах где-то null, сделаем замену на пустую строку
-                replace.Add($"[{templateParameter.FullName}]", string.Empty);
-            }
-        }
-
-        protected void CheckTableParameters(TemplateTableParameter table, Dictionary<string, object> parameters, ref string message)
-        {
-            if (!parameters.ContainsKey(table.Name))
-            {
-                var notFoundTableParameter = $"Не найден табличный параметр {table.Name}; ";
-                if (!message.Contains(notFoundTableParameter))
-                {
-                    message += notFoundTableParameter;
-                }
-                return;
-            }
-
-            var curTableParameter = (List<Dictionary<string, object>>)parameters[table.Name];
-
-            foreach (var param in table.InnerParams)
-            {
-                if (curTableParameter.Any(row => !row.ContainsKey(param.Name)))
-                {
-                    var notFoundParameterMessage = $"Не найден параметр {param.Name} табличного параметра {table.Name}; ";
-                    if (!message.Contains(notFoundParameterMessage))
-                    {
-                        message += notFoundParameterMessage;
-                    }
-                }
-            }
-
-            foreach (var param in table.InnerTableParams)
-            {
-                foreach (var tparam in curTableParameter)
-                {
-                    CheckTableParameters(param, tparam, ref message);
-                }
-            }
-        }
-
-        public string BuildWithParameters(Dictionary<string, object> parameters)
-        {
-            // Сформировать параметры необходимые для текущего шаблона
-            var replace = new Dictionary<string, string>();
-
-            FormReplaceByExistsParameters(parameters, replace);
-
-            var result = templateParameters.Where(parameter => !replace.ContainsKey("[" + parameter.FullName + "]"))
-                .Aggregate(string.Empty, (current, parameter) => current + string.Format("Не найден параметр {0}; ", parameter.Name));
-
-            // создаем документ на основе шаблона
-            WmlDocument wmlDoc;
-
-            using (var streamDoc = new OpenXmlMemoryStreamDocument(templateDoc))
-            {
-                using (WordprocessingDocument document = streamDoc.GetWordprocessingDocument())
-                {
-                    foreach (TemplateTableParameter table in templateTableParameters)
-                    {
-                        CheckTableParameters(table, parameters, ref result);
-
-                        var rows = parameters.ContainsKey(table.Name)
-                                       ? (List<Dictionary<string, object>>)parameters[table.Name]
-                                       : new List<Dictionary<string, object>>();
-                        table.ReplaceInDocument(document, rows);
-                    }
-
-                    TextReplacerExtensions.SearchAndReplace(document, replace, false);
-
-                    // с закладками оказалось неудобно в случаях, когда необходимо вставить картинку в табличный параметр - закладки не копируются
-                    // оставили этот код для совместимости
-                    foreach (var templateImageParameter in templateImageParameters.Where(imageParameter => parameters.ContainsKey(imageParameter.Name)))
-                    {
-                        var images = (List<ImageParameter>)parameters[templateImageParameter.Name];
-                        foreach (var image in images)
-                        {
-                            InsertAPicture(document, image, templateImageParameter.FullName);
-                        }
-                    }
-
-                    // тут вставляются картинки на место hyperlink, которые начинаются со спецпрефикса TemplateImageParameter.ImgBookmarkPrefix (imgTemplate)
-                    AddImageParameters(document);
-                }
-
-                wmlDoc = streamDoc.GetModifiedWmlDocument();
-            }
-
-            // форматирование применять только к одному, сразу по всем отчетам при большом количестве договоров оно вываливается в StackOverflow
-            wmlDoc = ApplyFormatting(wmlDoc);
-            resultDocs.Add(new Source(wmlDoc, true));
-
-            return result;
-        }
 
         public static void InsertAPicture(WordprocessingDocument wordprocessingDocument, ImageParameter image, string bookMarkName)
         {
@@ -291,16 +61,16 @@
                                 LeftEdge = 0L,
                                 TopEdge = 0L,
                                 RightEdge = 0L,
-                                BottomEdge = 0L
+                                BottomEdge = 0L,
                             },
                             new DW.DocProperties()
                             {
                                 Id = (UInt32Value)1U,
-                                Name = name
+                                Name = name,
                             },
                             new DW.NonVisualGraphicFrameDrawingProperties(new GraphicFrameLocks()
                             {
-                                NoChangeAspect = true
+                                NoChangeAspect = true,
                             }),
                             new Graphic(
                                 new GraphicData(
@@ -309,7 +79,7 @@
                                             new PIC.NonVisualDrawingProperties()
                                             {
                                                 Id = (UInt32Value)0U,
-                                                Name = name
+                                                Name = name,
                                             },
                                             new PIC.NonVisualPictureDrawingProperties()),
                                         new PIC.BlipFill(
@@ -317,13 +87,13 @@
                                                 new BlipExtensionList(
                                                     new BlipExtension()
                                                     {
-                                                        Uri = "{28A0092B-C50C-407E-A947-70E740481C1C}"
+                                                        Uri = "{28A0092B-C50C-407E-A947-70E740481C1C}",
                                                     })
                                                 )
                                             {
                                                 Embed = relationshipId,
                                                 CompressionState =
-                                                    BlipCompressionValues.Print
+                                                    BlipCompressionValues.Print,
                                             },
                                             new Stretch(
                                                 new FillRectangle())),
@@ -331,7 +101,7 @@
                                             new Transform2D(
                                                 new Offset() { X = 0L, Y = 0L },
                                                 new Extents() { Cx = emuWidth, Cy = emuHeight }),
-                                            new PresetGeometry(new AdjustValueList()
+                                                new PresetGeometry(new AdjustValueList()
                                                 )
                                             { Preset = ShapeTypeValues.Rectangle }))
                                     )
@@ -405,6 +175,234 @@
             }
         }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DocxReport"/> class.
+        /// </summary>
+        /// <param name="templateFilePath">Полный путь к файлу.</param>
+        public DocxReport(string templateFilePath)
+        {
+            // открыть файл шаблона
+            var templateDocument = WordprocessingDocument.Open(templateFilePath, false);
+
+            var mainPart = templateDocument.MainDocumentPart;
+
+            // формируем сложные-табличные шаблоны (<##Имя ... <#Поле#> ... Имя##>)
+            var allText = mainPart.Document.InnerText;
+            templateTableParameters = TemplateTableParameter.MatchParameters(allText);
+
+            // формируем простые шаблоны ([Имя])
+            foreach (
+                var parameter in
+                    MatchParameters(allText, @"\[(?<param>.+?)\]", "param")
+                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
+            {
+                templateParameters.Add(new TemplateParameter(parameter));
+            }
+
+            foreach (var headerPart in mainPart.HeaderParts)
+            {
+                foreach (var parameter in
+                    MatchParameters(headerPart.Header.InnerText, @"\[(?<param>.+?)\]", "param")
+                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
+                {
+                    templateParameters.Add(new TemplateParameter(parameter));
+                }
+            }
+
+            foreach (var footerPart in mainPart.FooterParts)
+            {
+                foreach (var parameter in
+                    MatchParameters(footerPart.Footer.InnerText, @"\[(?<param>.+?)\]", "param")
+                        .Where(parameter => templateParameters.All(p => p.FullName != parameter)))
+                {
+                    templateParameters.Add(new TemplateParameter(parameter));
+                }
+            }
+
+            // формируем шаблоны - рисунки
+            var allBookmarks = mainPart.RootElement.Descendants<BookmarkStart>();
+            foreach (var bookMark in allBookmarks.Where(b => b.Name.ToString().StartsWith(TemplateImageParameter.ImgBookmarkPrefix)))
+            {
+                templateImageParameters.Add(new TemplateImageParameter(bookMark.Name));
+            }
+
+            templateDoc = new WmlDocument(templateFilePath);
+
+            templateDocument.Close();
+        }
+
+        /// <summary>
+        /// Сохраняем и закрываем документы.
+        /// </summary>
+        /// <param name="saveFilePath">Полный путь к файлу.</param>
+        public void SaveAs(string saveFilePath)
+        {
+            DocumentBuilder.BuildDocument(resultDocs, saveFilePath);
+        }
+
+        /// <summary>
+        /// Сохраняем и закрываем документы.
+        /// </summary>
+        /// <param name="stream">Поток для сохранения.</param>
+        public void SaveAs(Stream stream)
+        {
+            var wmlDocument = DocumentBuilder.BuildDocument(resultDocs);
+            wmlDocument.WriteByteArray(stream);
+        }
+
+        public string BuildWithParameters(Dictionary<string, object> parameters)
+        {
+            // Сформировать параметры необходимые для текущего шаблона
+            var replace = new Dictionary<string, string>();
+
+            FormReplaceByExistsParameters(parameters, replace);
+
+            var result = templateParameters.Where(parameter => !replace.ContainsKey("[" + parameter.FullName + "]"))
+                .Aggregate(string.Empty, (current, parameter) => current + string.Format("Не найден параметр {0}; ", parameter.Name));
+
+            // создаем документ на основе шаблона
+            WmlDocument wmlDoc;
+
+            using (var streamDoc = new OpenXmlMemoryStreamDocument(templateDoc))
+            {
+                using (WordprocessingDocument document = streamDoc.GetWordprocessingDocument())
+                {
+                    foreach (TemplateTableParameter table in templateTableParameters)
+                    {
+                        CheckTableParameters(table, parameters, ref result);
+
+                        var rows = parameters.ContainsKey(table.Name)
+                                       ? (List<Dictionary<string, object>>)parameters[table.Name]
+                                       : new List<Dictionary<string, object>>();
+                        table.ReplaceInDocument(document, rows);
+                    }
+
+                    TextReplacerExtensions.SearchAndReplace(document, replace, false);
+
+                    // с закладками оказалось неудобно в случаях, когда необходимо вставить картинку в табличный параметр - закладки не копируются
+                    // оставили этот код для совместимости
+                    foreach (var templateImageParameter in templateImageParameters.Where(imageParameter => parameters.ContainsKey(imageParameter.Name)))
+                    {
+                        var images = (List<ImageParameter>)parameters[templateImageParameter.Name];
+
+                        foreach (var image in images)
+                        {
+                            InsertAPicture(document, image, templateImageParameter.FullName);
+                        }
+                    }
+
+                    // тут вставляются картинки на место hyperlink, которые начинаются со спецпрефикса TemplateImageParameter.ImgBookmarkPrefix (imgTemplate)
+                    AddImageParameters(document);
+                }
+
+                wmlDoc = streamDoc.GetModifiedWmlDocument();
+            }
+
+            // форматирование применять только к одному, сразу по всем отчетам при большом количестве договоров оно вываливается в StackOverflow
+            wmlDoc = ApplyFormatting(wmlDoc);
+            resultDocs.Add(new Source(wmlDoc, true));
+
+            return result;
+        }
+
+        /// <summary>
+        /// Создать замены на основе созданных параметров и тех которые есть в шаблоне.
+        /// </summary>
+        /// <param name="inputParameters">Параметры.</param>
+        /// <param name="replace">Замены.</param>
+        protected void FormReplaceByExistsParameters(
+            Dictionary<string, object> inputParameters,
+            Dictionary<string, string> replace)
+        {
+            foreach (var templateParameter in templateParameters)
+            {
+                if (inputParameters.ContainsKey(templateParameter.Name))
+                {
+                    object inputParameterValue = inputParameters[templateParameter.Name];
+                    replace.Add(
+                        $"[{templateParameter.FullName}]",
+                        templateParameter.FormatObject(inputParameterValue));
+                    continue;
+                }
+
+                // Может быть идет значение какого-либо поля параметра
+                var parameterName = templateParameter.Name;
+                if (!parameterName.Contains("."))
+                {
+                    continue;
+                }
+
+                var objectName = parameterName.Substring(0, parameterName.IndexOf("."));
+
+                // если такого параметра нет значит пользователь скармливает сайту какую-то фигню, игнорируем его
+                if (!inputParameters.ContainsKey(objectName))
+                {
+                    continue;
+                }
+
+                object dataObject = inputParameters[objectName];
+
+                // ковыряем значения полей через reflection
+                var fieldName = parameterName.Remove(0, objectName.Length + 1);
+
+                while (fieldName.Contains(".") && dataObject != null)
+                {
+                    objectName = fieldName.Substring(0, fieldName.IndexOf("."));
+                    dataObject = GetFieldValueWithReflection(dataObject, objectName);
+
+                    fieldName = fieldName.Remove(0, objectName.Length + 1);
+                }
+
+                if (dataObject != null)
+                {
+                    var fieldValue = GetFieldValueWithReflection(dataObject, fieldName);
+                    replace.Add($"[{templateParameter.FullName}]", templateParameter.FormatObject(fieldValue));
+                    continue;
+                }
+
+                // Сам параметр валидный, но в объектных свойствах где-то null, сделаем замену на пустую строку
+                replace.Add($"[{templateParameter.FullName}]", string.Empty);
+            }
+        }
+
+        protected void CheckTableParameters(TemplateTableParameter table, Dictionary<string, object> parameters, ref string message)
+        {
+            if (!parameters.ContainsKey(table.Name))
+            {
+                var notFoundTableParameter = $"Не найден табличный параметр {table.Name}; ";
+
+                if (!message.Contains(notFoundTableParameter))
+                {
+                    message += notFoundTableParameter;
+                }
+
+                return;
+            }
+
+            var curTableParameter = (List<Dictionary<string, object>>)parameters[table.Name];
+
+            foreach (var param in table.InnerParams)
+            {
+                if (curTableParameter.Any(row => !row.ContainsKey(param.Name)))
+                {
+                    var notFoundParameterMessage = $"Не найден параметр {param.Name} табличного параметра {table.Name}; ";
+
+                    if (!message.Contains(notFoundParameterMessage))
+                    {
+                        message += notFoundParameterMessage;
+                    }
+                }
+            }
+
+            foreach (var param in table.InnerTableParams)
+            {
+                foreach (var tparam in curTableParameter)
+                {
+                    CheckTableParameters(param, tparam, ref message);
+                }
+            }
+        }
+
         protected WmlDocument ApplyFormatting(WmlDocument wmlDoc)
         {
             WmlDocument resultDoc = null;
@@ -440,7 +438,6 @@
                             innerText,
                             @"<red>(?<param>.*?)</red>",
                             "param").Distinct().ToList();
-
 
                     var regex = new Regex(@"<(?<size>s(?<sd>\d+))>(?<param>.*?)</\k<size>>");
                     formattedSizeParameters =
@@ -540,11 +537,13 @@
                             var par = MatchParameters(param, @"<p>(?<param>.*?)\</p>", "param").Distinct().ToList();
                             var pPr = oldNode.Element(W.pPr);
                             var rPr = oldNode.Element(W.r).Element(W.rPr);
+
                             foreach (var p in par)
                             {
                                 var newNode = new XElement(W.p, pPr, new XElement(W.r, rPr, new XElement(W.t, p)));
                                 oldNode.AddBeforeSelf(newNode);
                             }
+
                             oldNode.Remove();
                             document.MainDocumentPart.PutXDocument();
                         }
@@ -556,6 +555,7 @@
                         {
                             var node = document.MainDocumentPart.GetXDocument().Root;
                             var oldNode = TextReplacerExtensions.WmlFindFirst(node, "<d>" + param + "</d>");
+
                             if (oldNode.Name == W.p)
                             {
                                 oldNode.Remove();
@@ -572,11 +572,11 @@
         }
 
         /// <summary>
-        /// Получить значение поля используя Reflection
+        /// Получить значение поля используя Reflection.
         /// </summary>
-        /// <param name="dataObject"></param>
-        /// <param name="fieldName"></param>
-        /// <returns></returns>
+        /// <param name="dataObject">Объект.</param>
+        /// <param name="fieldName">Имя поля.</param>
+        /// <returns>Значение поля.</returns>
         protected object GetFieldValueWithReflection(object dataObject, string fieldName)
         {
             var propeties = dataObject.GetType().GetProperties();
@@ -587,6 +587,18 @@
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Найти все параметры в по указанному паттерну в тексте.
+        /// </summary>
+        /// <param name="text">Текст.</param>
+        /// <param name="pattern">Паттерн.</param>
+        /// <param name="patternGroup">Группа паттерна.</param>
+        private List<string> MatchParameters(string text, string pattern, string patternGroup)
+        {
+            var regex = new Regex(pattern);
+            return regex.Matches(text).Cast<Match>().Select(m => m.Groups[patternGroup].Value).ToList();
         }
     }
 }
