@@ -23,14 +23,4 @@
     <ProjectReference Include="..\NewPlatform.Flexberry.OpenXmlPowerTools.Reports\NewPlatform.Flexberry.OpenXmlPowerTools.Reports.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="files\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="files\tmp.docx">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
 </Project>
