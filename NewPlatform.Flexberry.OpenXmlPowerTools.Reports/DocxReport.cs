@@ -88,8 +88,7 @@
                                                     new BlipExtension()
                                                     {
                                                         Uri = "{28A0092B-C50C-407E-A947-70E740481C1C}",
-                                                    })
-                                                )
+                                                    }))
                                             {
                                                 Embed = relationshipId,
                                                 CompressionState =
@@ -101,12 +100,9 @@
                                             new Transform2D(
                                                 new Offset() { X = 0L, Y = 0L },
                                                 new Extents() { Cx = emuWidth, Cy = emuHeight }),
-                                                new PresetGeometry(new AdjustValueList()
-                                                )
-                                            { Preset = ShapeTypeValues.Rectangle }))
-                                    )
-                                { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" })
-                            )
+                                                new PresetGeometry(new AdjustValueList())
+                                            { Preset = ShapeTypeValues.Rectangle })))
+                                { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))
                         {
                             DistanceFromTop = (UInt32Value)0U,
                             DistanceFromBottom = (UInt32Value)0U,
