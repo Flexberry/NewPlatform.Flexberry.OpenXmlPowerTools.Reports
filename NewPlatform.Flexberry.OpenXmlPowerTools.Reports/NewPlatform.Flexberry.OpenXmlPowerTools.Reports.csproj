@@ -19,6 +19,7 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <CodeAnalysisRuleSet>..\Flexberry.ruleset</CodeAnalysisRuleSet>
     <RootNamespace>NewPlatform.Flexberry.Reports</RootNamespace>
     <AssemblyName>NewPlatform.Flexberry.OpenXmlPowerTools.Reports</AssemblyName>
     <AssemblyVersion>1.0.0.1</AssemblyVersion>
